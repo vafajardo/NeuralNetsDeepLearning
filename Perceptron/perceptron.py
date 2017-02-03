@@ -24,7 +24,18 @@ class pcn:
                 print('iteration {0}'.format(i))
                 print(y)
                 print(self.weights)
-    
+
+    def recall(self):
+        """
+        This method uses the current sets of weights, and outputs
+        the firing of the output nodes when fed the original input data.
+        """
+        # calculate sums for the output nodes
+        h = np.dot(self.inputs,self.weights)
+        # calculate outputs for the output nodes
+        y = np.where(h>0, 1, 0)
+        return y   
+ 
     def forward(self, newdata):
         """
         This method uses the current sets of weights, and outputs
