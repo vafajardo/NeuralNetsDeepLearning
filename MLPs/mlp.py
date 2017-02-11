@@ -26,7 +26,7 @@ class mlp:
                             shape=(self.arch[i]+1,self.arch[i+1]))
                         for i in range(len(self.arch))[:-1]]
 
-    def mlptrain(self,inputs,targets,eta=0.25,T=int(1e4)):
+    def fit(self,inputs,targets,eta=0.25,T=int(1e4)):
         for ite in range(T):
             randomizedIndex = np.random.permutation(inputs.shape[0])
             actsWithBias = [np.ones(self.arch[i] + 1) for i in range(self.nlayers)] # note redundant bias included for output layer
@@ -51,3 +51,36 @@ class mlp:
                 # Update weights
                 for i,wt in enumerate(self.weights):
                     self.weights[i] = wt - eta*np.kron(deltas[i+1],actsWithBias[i][:,np.newaxis]) # newaxis for conversion to column vec
+
+    def predict(self, inputs):
+        """
+        This method takes an np.array of input vectors and produces the outputs
+        of each input vector. In other words, it performs the forward pass of the NN.
+        """
+        actsWithBias = [np.ones(self.arch[i] + 1) for i in range(self.nlayers)] # note redundant bias included for output layer
+        outputs = np.zeros(len(inputs)*self.arch[-1]).reshape(len(inputs), self.arch[-1])
+        for i,thisInput in enumerate(inputs):
+            actsWithBias[0][1:] = thisInput
+            for l in range(self.nlayers)[1:]: # compute signals and activations of nodes in every layer
+                signals = np.dot(actsWithBias[l-1],self.weights[l-1]) # signals of layer l nodes
+                actsWithBias[l][1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
+            outputs[i,:] = actsWithBias[-1][1:]
+        return outputs
+
+    def cfnmatrix(self, inputs, targets):
+        """
+        Produce a confusion matrix of the result of feeding in the labelled data
+        (inputs, targets) to the NN.
+        """
+        predicted = self.predict(inputs)
+        if self.arch[-1] == 1:
+            binaryOut = np.where(predicted > 0.5, 1, 0)
+            return np.array([[(binaryOut==0).sum() - targets[binaryOut == 0].sum(),targets[binaryOut == 0].sum()],
+            [(binaryOut == 1).sum() - targets[binaryOut == 1].sum(),targets[binaryOut == 1].sum()]])
+        else:
+            predictedClass = predicted.max(axis=1)[:,None] # predicted class of each pattern
+            binaryOut = (predicted == predictedClass).astype(int)
+            cmatrix = np.zeros(self.arch[-1]**2).reshape(self.arch[-1],self.arch[-1])
+            for c in range(self.arch[-1]):
+                cmatrix[c,:] = targets[binaryOut[:,c] == 1].sum(axis=0)
+            return cmatrix
