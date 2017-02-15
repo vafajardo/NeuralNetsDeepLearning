@@ -25,8 +25,9 @@ class mlp:
                             nWeights=(self.arch[i] + 1)*self.arch[i+1],
                             shape=(self.arch[i]+1,self.arch[i+1]))
                         for i in range(len(self.arch))[:-1]]
+        self.updates = [np.zeros((self.arch[i]+1,self.arch[i+1])) for i in range(self.nlayers - 1)] # list of np.arrays storing weight updates
 
-    def simpletrain(self,inputs,targets,eta=0.25,T=int(1e4)):
+    def simpletrain(self,inputs,targets,eta=0.25,T=int(1e4),momentum=0.9):
         """
         This method trains the NN for a specified number of iterations.
         """
@@ -51,25 +52,14 @@ class mlp:
                     deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
                             * actsWithBias[j][1:] * (1-actsWithBias[j][1:])
                 # print(deltas)
-                # Update weights
                 for i,wt in enumerate(self.weights):
-                    self.weights[i] = wt - eta*np.kron(deltas[i+1],actsWithBias[i][:,np.newaxis]) # newaxis for conversion to column vec
+                    self.updates[i] = eta*np.kron(deltas[i+1],actsWithBias[i][:,None]) + momentum*self.updates[i]
+                    self.weights[i] -= self.updates[i]
 
-    def train(self, trainIn, trainT, validIn, validT, eta=0.25, method='earlystop', valRatio=0.5, interval=10):
+    def train(self, trainIn, trainT, validIn, validT, eta=0.25, method='earlystop', valRatio=0.5, interval=10, momentum=0.9):
         """
-        This method trains the NN by first splitting the set into training, testing,
-        and validation sets, and then performs early stopping.
+        This method trains the NN and must be supplied train and validation sets.
         """
-        # if validSet == None:
-        #     # split data into train and validation set
-        #     ixs = np.arange(len(inputs))
-        #     np.random.shuffle(ixs) # shuffle the index
-        #     cut = int(valratio*len(inputs)) # of patterns in validation set
-        #     trainIn = inputs[ixs[:cut]]
-        #     trainT = targets[ixs[:cut]]
-        #     validIn = inputs[ixs[cut:]]
-        #     validT = targets[ixs[cut:]]
-
         # this early stopping will use two orders of error
         # both of these steps in error must be increasing to stop training
         thisError = int(1e6)
@@ -78,7 +68,7 @@ class mlp:
         nepochs = 0
         while (order1Error - thisError > 0) or (order2Error - order1Error> 0):
             nepochs += 1
-            self.simpletrain(trainIn, trainT, eta, T=interval)
+            self.simpletrain(trainIn, trainT, eta, T=interval, momentum=momentum)
             order2Error = order1Error
             order1Error = thisError
             validOut = self.predict(validIn)
@@ -113,7 +103,7 @@ class mlp:
         else:
             predictedClass = predicted.max(axis=1)[:,None] # predicted class of each pattern
             binaryOut = (predicted == predictedClass).astype(int)
-            cmatrix = np.zeros(self.arch[-1]**2).reshape(self.arch[-1],self.arch[-1])
+            cmatrix = np.zeros((self.arch[-1],self.arch[-1]))
             for c in range(self.arch[-1]):
                 cmatrix[:,c] = targets[binaryOut[:,c] == 1].sum(axis=0)
         print('Error: {0}'.format(1-cmatrix.trace()/cmatrix.sum()))
