@@ -11,7 +11,11 @@ def initializeWeights(nIn,nWeights,shape=None):
         return -1/np.sqrt(nIn) + np.random.rand(nWeights)*(2/np.sqrt(nIn))
 
 class mlp:
-    def __init__(self, inputs, targets, hiddenlayers,seed=None):
+    def __init__(self, inputs, targets, hiddenlayers,hiddenact = 'sigmoid',seed=None):
+        """
+        hiddenlayers = an np.array providing the number hidden nodes in each hidden layer
+        hiddenact = the acitivation function used for all of the nodes in the hidden layerz
+        """
         self.inputs = inputs
         self.hiddenlayers = hiddenlayers
         self.targets = targets
@@ -26,6 +30,8 @@ class mlp:
                             shape=(self.arch[i]+1,self.arch[i+1]))
                         for i in range(len(self.arch))[:-1]]
         self.updates = [np.zeros((self.arch[i]+1,self.arch[i+1])) for i in range(self.nlayers - 1)] # list of np.arrays storing weight updates
+        self.nepochs = None
+        self.hiddenact = hiddenact
 
     def simpletrain(self,inputs,targets,eta=0.25,T=int(1e4),momentum=0.9):
         """
@@ -39,9 +45,17 @@ class mlp:
                 actsWithBias[0][1:] = inputs[ix]
                 thisTarget = targets[ix]
                 # Forward Pass
-                for l in range(self.nlayers)[1:]: # compute signals and activations of nodes in every layer
+                for l in range(self.nlayers)[1:-1]: # compute signals and activations of nodes in every layer
                     signals = np.dot(actsWithBias[l-1],self.weights[l-1]) # signals of layer l nodes
-                    actsWithBias[l][1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
+                    if self.hiddenact == 'tanh':
+                        actsWithBias[l][1:] = np.tanh(signals) # tanh activation functions
+                    else:
+                        actsWithBias[l][1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
+                # compute signal and activations of output nodes (always sigmoid)
+                l += 1
+                signals = np.dot(actsWithBias[l-1],self.weights[l-1])
+                actsWithBias[l][1:] = 1 / (1 + np.exp(-signals))
+
                 # print(actsWithBias)
                 # Backward Pass
                 # ... compute deltas starting from the end of the NN
@@ -49,7 +63,11 @@ class mlp:
                 deltas[self.nlayers - 1] = (outputs - thisTarget)*outputs*(1-outputs)
                 # ... compute deltas for hidden layers
                 for j in range(self.nlayers)[1:-1][::-1]: # traverse weights backwards
-                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
+                    if self.hiddenact == "tanh":
+                        deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
+                            * (1-actsWithBias[j][1:]**2)
+                    else:
+                        deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
                             * actsWithBias[j][1:] * (1-actsWithBias[j][1:])
                 # print(deltas)
                 for i,wt in enumerate(self.weights):
@@ -73,9 +91,10 @@ class mlp:
             order1Error = thisError
             validOut = self.predict(validIn)
             thisError = 0.5*((validOut - validT)**2).sum()
+        self.nepochs = nepochs * interval
         print("Stopped after {0} epochs".format(nepochs))
 
-    def predict(self, inputs):
+    def predict(self, inputs, method='raw'):
         """
         This method takes an np.array of input vectors and produces the outputs
         of each input vector. In other words, it performs the forward pass of the NN.
@@ -84,10 +103,22 @@ class mlp:
         outputs = np.zeros(len(inputs)*self.arch[-1]).reshape(len(inputs), self.arch[-1])
         for i,thisInput in enumerate(inputs):
             actsWithBias[0][1:] = thisInput
-            for l in range(self.nlayers)[1:]: # compute signals and activations of nodes in every layer
+            # Forward Pass
+            for l in range(self.nlayers)[1:-1]: # compute signals and activations of nodes in every layer
                 signals = np.dot(actsWithBias[l-1],self.weights[l-1]) # signals of layer l nodes
-                actsWithBias[l][1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
+                if self.hiddenact == 'tanh':
+                    actsWithBias[l][1:] = np.tanh(signals) # tanh activation functions
+                else:
+                    actsWithBias[l][1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
+            # compute signal and activations of output nodes (always sigmoid)
+            l += 1
+            signals = np.dot(actsWithBias[l-1],self.weights[l-1])
+            actsWithBias[l][1:] = 1 / (1 + np.exp(-signals))
             outputs[i,:] = actsWithBias[-1][1:]
+        if method == 'max':
+            assert self.arch[-1] > 1 # should only use this when output layer has multiple nodes
+            maxOutputs = outputs.max(axis=1)[:,None]
+            outputs = (outputs == maxOutputs).astype(int)
         return outputs
 
     def cfnmatrix(self, inputs, targets):
