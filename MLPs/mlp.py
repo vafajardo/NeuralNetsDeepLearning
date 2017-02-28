@@ -155,39 +155,50 @@ class mlpbatch(mlp):
         mlp.__init__(self, inputs, targets, hiddenlayers,hiddenact,seed)
         self.wtdecay = 1
 
+    def forward(self, inputs):
+        npatterns = inputs.shape[0]
+        actsWithBias = [np.concatenate((np.ones((npatterns, 1)), inputs), axis=1)]
+        actsWithBias += [np.ones((npatterns, self.arch[i] + 1)) for i in range(1,self.nlayers)] # note redundant bias included for output layer
+        # Forward pass
+        for l in range(self.nlayers)[1:-1]: # compute signals and activations of nodes in every layer
+            signals = np.dot(actsWithBias[l-1],self.weights[l-1]) # signals of layer l nodes
+            if self.hiddenact == 'tanh':
+                actsWithBias[l][:,1:] = np.tanh(signals) # tanh activation functions
+            else:
+                actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
+        # compute signal and activations of output nodes (always sigmoid)
+        l += 1
+        signals = np.dot(actsWithBias[l-1],self.weights[l-1])
+        actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals))
+        return actsWithBias
+
+    def backward(self, outputs, targets, actsWithBias):
+        # Backward pass
+        npatterns = outputs.shape[0]
+        deltas = [np.ones((npatterns, self.arch[i])) for i in range(self.nlayers)]
+        # outputs = actsWithBias[self.nlayers - 1][:,1:]
+        deltas[self.nlayers - 1] = (outputs - targets)*outputs*(1-outputs) / npatterns
+        # ... accumulate deltas for hidden layers
+        for j in range(self.nlayers)[1:-1][::-1]: # traverse weights backwards
+            if self.hiddenact == "tanh":
+                deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
+                    * (1-actsWithBias[j][:,1:]**2)
+            else:
+                deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
+                    * actsWithBias[j][:,1:] * (1-actsWithBias[j][:,1:])
+        return deltas
+
     def simpletrain(self,inputs,targets,eta=0.25,T=int(1e4),momentum=0.9):
         """
         This method trains the NN for a specified number of iterations.
         """
+        npatterns = inputs.shape[0]
         for ite in range(T):
-            actsWithBias = [np.concatenate((np.ones((self.npatterns, 1)), inputs), axis=1)]
-            actsWithBias += [np.ones((self.npatterns, self.arch[i] + 1)) for i in range(1,self.nlayers)] # note redundant bias included for output layer
-            deltas = [np.ones((self.npatterns, self.arch[i])) for i in range(self.nlayers)]
-
             # Forward pass
-            for l in range(self.nlayers)[1:-1]: # compute signals and activations of nodes in every layer
-                signals = np.dot(actsWithBias[l-1],self.weights[l-1]) # signals of layer l nodes
-                if self.hiddenact == 'tanh':
-                    actsWithBias[l][:,1:] = np.tanh(signals) # tanh activation functions
-                else:
-                    actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
-            # compute signal and activations of output nodes (always sigmoid)
-            l += 1
-            signals = np.dot(actsWithBias[l-1],self.weights[l-1])
-            actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals))
-
-            # Backward pass
+            actsWithBias = self.forward(inputs)
             outputs = actsWithBias[self.nlayers - 1][:,1:]
-            deltas[self.nlayers - 1] = (outputs - targets)*outputs*(1-outputs) / self.npatterns
-            # ... accumulate deltas for hidden layers
-            for j in range(self.nlayers)[1:-1][::-1]: # traverse weights backwards
-                if self.hiddenact == "tanh":
-                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
-                        * (1-actsWithBias[j][:,1:]**2)
-                else:
-                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
-                        * actsWithBias[j][:,1:] * (1-actsWithBias[j][:,1:])
-
+            # Backward pass
+            deltas = self.backward(outputs,targets,actsWithBias)
             # Update weights
             for i,wt in enumerate(self.weights):
                 self.updates[i] = eta*np.dot(actsWithBias[i].T,deltas[i+1]) + momentum*self.updates[i]
@@ -209,33 +220,11 @@ class mlpRprop(mlpbatch):
         oldtrainError = -1.0
         currentGrads = [np.zeros((self.arch[i]+1,self.arch[i+1])) for i in range(self.nlayers - 1)]
         for ite in range(T):
-            actsWithBias = [np.concatenate((np.ones((self.npatterns, 1)), inputs), axis=1)]
-            actsWithBias += [np.ones((self.npatterns, self.arch[i] + 1)) for i in range(1,self.nlayers)] # note redundant bias included for output layer
-            deltas = [np.ones((self.npatterns, self.arch[i])) for i in range(self.nlayers)]
-
             # Forward pass
-            for l in range(self.nlayers)[1:-1]: # compute signals and activations of nodes in every layer
-                signals = np.dot(actsWithBias[l-1],self.weights[l-1]) # signals of layer l nodes
-                if self.hiddenact == 'tanh':
-                    actsWithBias[l][:,1:] = np.tanh(signals) # tanh activation functions
-                else:
-                    actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
-            # compute signal and activations of output nodes (always sigmoid)
-            l += 1
-            signals = np.dot(actsWithBias[l-1],self.weights[l-1])
-            actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals))
-
-            # Backward pass
+            actsWithBias = self.forward(inputs)
             outputs = actsWithBias[self.nlayers - 1][:,1:]
-            deltas[self.nlayers - 1] = (outputs - targets)*outputs*(1-outputs) / self.npatterns
-            # ... accumulate deltas for hidden layers
-            for j in range(self.nlayers)[1:-1][::-1]: # traverse weights backwards
-                if self.hiddenact == "tanh":
-                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
-                        * (1-actsWithBias[j][:,1:]**2)
-                else:
-                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
-                        * actsWithBias[j][:,1:] * (1-actsWithBias[j][:,1:])
+            # Backward pass
+            deltas = self.backward(outputs,targets,actsWithBias)
 
             # Update stepsizes
             for i in range(self.nlayers - 1):
@@ -271,33 +260,11 @@ class mlpQprop(mlpbatch):
         """
         currentGrads = [np.zeros((self.arch[i]+1,self.arch[i+1])) for i in range(self.nlayers - 1)]
         for ite in range(T):
-            actsWithBias = [np.concatenate((np.ones((self.npatterns, 1)), inputs), axis=1)]
-            actsWithBias += [np.ones((self.npatterns, self.arch[i] + 1)) for i in range(1,self.nlayers)] # note redundant bias included for output layer
-            deltas = [np.ones((self.npatterns, self.arch[i])) for i in range(self.nlayers)]
-
             # Forward pass
-            for l in range(self.nlayers)[1:-1]: # compute signals and activations of nodes in every layer
-                signals = np.dot(actsWithBias[l-1],self.weights[l-1]) # signals of layer l nodes
-                if self.hiddenact == 'tanh':
-                    actsWithBias[l][:,1:] = np.tanh(signals) # tanh activation functions
-                else:
-                    actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
-            # compute signal and activations of output nodes (always sigmoid)
-            l += 1
-            signals = np.dot(actsWithBias[l-1],self.weights[l-1])
-            actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals))
-
-            # Backward pass
+            actsWithBias = self.forward(inputs)
             outputs = actsWithBias[self.nlayers - 1][:,1:]
-            deltas[self.nlayers - 1] = (outputs - targets)*outputs*(1-outputs) / self.npatterns
-            # ... accumulate deltas for hidden layers
-            for j in range(self.nlayers)[1:-1][::-1]: # traverse weights backwards
-                if self.hiddenact == "tanh":
-                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
-                        * (1-actsWithBias[j][:,1:]**2)
-                else:
-                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
-                        * actsWithBias[j][:,1:] * (1-actsWithBias[j][:,1:])
+            # Backward pass
+            deltas = self.backward(outputs,targets,actsWithBias)
 
             # Compute current gradients
             for i in range(self.nlayers - 1):
