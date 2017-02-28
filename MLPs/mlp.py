@@ -76,7 +76,7 @@ class mlp:
                     self.updates[i] = eta*np.outer(actsWithBias[i],deltas[i+1]) + momentum*self.updates[i]
                     self.weights[i] -= self.updates[i]
 
-    def train(self, trainIn, trainT, validIn, validT, eta=0.25, burnin=100, interval=10, momentum=0.9, maxchecks=1000):
+    def train(self, trainIn, trainT, validIn, validT, eta=0.25, burnin=100, interval=10, maxchecks=1000, **kwargs):
         """
         This method trains the NN and must be supplied train and validation sets.
         """
@@ -86,10 +86,10 @@ class mlp:
         order1Error = int(1e6) + 1
         order2Error = int(1e6) + 2
         nchecks = 0
-        self.simpletrain(trainIn, trainT, eta, T=burnin, momentum=momentum)
+        self.simpletrain(trainIn, trainT, eta, T=burnin, **kwargs) # burnin phase
         while (order1Error - thisError > -0.01) or (order2Error - order1Error> -0.01):
             nchecks += 1
-            self.simpletrain(trainIn, trainT, eta, T=interval, momentum=momentum)
+            self.simpletrain(trainIn, trainT, eta, T=interval, **kwargs)
             order2Error = order1Error
             order1Error = thisError
             validOut = self.predict(validIn)
@@ -202,7 +202,7 @@ class mlpRprop(mlpbatch):
         self.stepsizes = [np.ones((self.arch[i]+1,self.arch[i+1]))*0.1 for i in range(self.nlayers - 1)]
         self.wtbacktrack = wtbacktrack
 
-    def simpletrain(self,inputs,targets,eta=0.25,T=int(1e4),momentum=0.9,deltamax=50.0,deltamin=1e-6,etaplus=1.2,etaminus=0.5):
+    def simpletrain(self,inputs,targets,eta=0.25,T=int(1e4),deltamax=50.0,deltamin=1e-6,etaplus=1.2,etaminus=0.5):
         """
         This method trains the NN for a specified number of iterations.
         """
@@ -257,3 +257,62 @@ class mlpRprop(mlpbatch):
                 # Update gradients...note gradients for those weights whose gradient changed directions is set to zero
                 self.gradients[i] = currentGrads[i]*(currentGrads[i]*self.gradients[i] >= 0)
             oldtrainError = trainError
+
+class mlpQprop(mlpbatch):
+    def __init__(self, inputs, targets, hiddenlayers,hiddenact = 'sigmoid',wtdecay=1,seed=None):
+        mlp.__init__(self, inputs, targets, hiddenlayers,hiddenact,seed)
+        self.wtdecay = 1
+        self.gradients = [np.zeros((self.arch[i]+1,self.arch[i+1])) for i in range(self.nlayers - 1)]
+        self.growth = [np.zeros((self.arch[i]+1,self.arch[i+1])) for i in range(self.nlayers - 1)]
+
+    def simpletrain(self,inputs,targets,eta=0.25,mu=1.75,T=int(1e4)):
+        """
+        This method trains the NN for a specified number of iterations.
+        """
+        currentGrads = [np.zeros((self.arch[i]+1,self.arch[i+1])) for i in range(self.nlayers - 1)]
+        for ite in range(T):
+            actsWithBias = [np.concatenate((np.ones((self.npatterns, 1)), inputs), axis=1)]
+            actsWithBias += [np.ones((self.npatterns, self.arch[i] + 1)) for i in range(1,self.nlayers)] # note redundant bias included for output layer
+            deltas = [np.ones((self.npatterns, self.arch[i])) for i in range(self.nlayers)]
+
+            # Forward pass
+            for l in range(self.nlayers)[1:-1]: # compute signals and activations of nodes in every layer
+                signals = np.dot(actsWithBias[l-1],self.weights[l-1]) # signals of layer l nodes
+                if self.hiddenact == 'tanh':
+                    actsWithBias[l][:,1:] = np.tanh(signals) # tanh activation functions
+                else:
+                    actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals)) # Sigmoid activations of layer l nodes
+            # compute signal and activations of output nodes (always sigmoid)
+            l += 1
+            signals = np.dot(actsWithBias[l-1],self.weights[l-1])
+            actsWithBias[l][:,1:] = 1 / (1 + np.exp(-signals))
+
+            # Backward pass
+            outputs = actsWithBias[self.nlayers - 1][:,1:]
+            deltas[self.nlayers - 1] = (outputs - targets)*outputs*(1-outputs) / self.npatterns
+            # ... accumulate deltas for hidden layers
+            for j in range(self.nlayers)[1:-1][::-1]: # traverse weights backwards
+                if self.hiddenact == "tanh":
+                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
+                        * (1-actsWithBias[j][:,1:]**2)
+                else:
+                    deltas[j] = np.dot(deltas[j + 1], self.weights[j][1:,].T) \
+                        * actsWithBias[j][:,1:] * (1-actsWithBias[j][:,1:])
+
+            # Compute current gradients
+            for i in range(self.nlayers - 1):
+                currentGrads[i] = np.dot(actsWithBias[i].T,deltas[i+1])
+
+            # Update weights
+            for i,wt in enumerate(self.weights):
+                self.growth[i] = currentGrads[i] / (self.gradients[i] - currentGrads[i])
+                self.growth[i] = np.where(((currentGrads[i]*self.gradients[i] > 0) & (np.abs(currentGrads[i]) - np.abs(self.gradients[i]) > 0)), -self.growth[i], self.growth[i])
+                # ((currentGrads[i]*self.gradients[i] > 0) & (np.abs(currentGrads[i]) - np.abs(self.gradients[i]) > 0))*(-self.growth[i]) \
+                #                     + (~((currentGrads[i]*self.gradients[i] > 0) & (np.abs(currentGrads[i]) - np.abs(self.gradients[i]) > 0)))*(self.growth[i])
+                self.growth[i] = np.where(np.abs(self.growth[i]) > mu, np.sign(self.growth[i])*mu, self.growth[i])
+                # (self.growth[i] < -mu)*(-mu) + (self.growth[i] > mu)*mu + (self.growth[i] <= mu & self.growth >= -mu)*self.growth[i] # cap off growth rates
+                self.updates[i] = self.growth[i]*self.updates[i] \
+                                        + (currentGrads[i]*self.gradients[i] >= 0)*eta*currentGrads[i]
+                self.weights[i] -= self.updates[i]
+                self.weights[i] *= self.wtdecay
+                self.gradients[i] = currentGrads[i] # update gradients
