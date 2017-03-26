@@ -1,5 +1,13 @@
 import numpy as np
 
+"""
+Source code for COSC 4P80 assignment.
+"""
+
+__author__ = Val Andrei Fajardo
+
+
+
 def initializeWeights(nIn,nWeights,shape=None):
     """
     Returns an np.array of randomized weights according to the UNIF(-1/sqrt(nIn),1/sqrt(nIn)).
@@ -146,7 +154,7 @@ class mlp:
             binaryOut = (predicted == predictedClass).astype(int)
             cmatrix = np.zeros((self.arch[-1],self.arch[-1]))
             for c in range(self.arch[-1]):
-                cmatrix[:,c] = targets[binaryOut[:,c] == 1].sum(axis=0)
+                cmatrix[:,c] = targets[binaryOut[:,c] == 1].sum(axis=0) # sum only appropriate targets
         print('Error: {0}'.format(1-cmatrix.trace()/cmatrix.sum()))
         return cmatrix
 
@@ -263,7 +271,7 @@ class mlpQprop(mlpbatch):
             # Forward pass
             actsWithBias = self.forward(inputs)
             outputs = actsWithBias[self.nlayers - 1][:,1:]
-            # Backward pass
+            # Backward pass```````````
             deltas = self.backward(outputs,targets,actsWithBias)
 
             # Compute current gradients
