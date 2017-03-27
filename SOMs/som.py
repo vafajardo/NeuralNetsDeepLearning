@@ -28,15 +28,22 @@ class som:
         self.featdim = featdim
         self.wrap = wrap
         self.mapdim = mapdim
+        self.mapwidth, self.maplength = mapdim
         self.mapnodes = np.prod(mapdim)
         self.mapc = np.array([[i,j] for i in range(self.mapdim[0]) for j in range(self.mapdim[1])])
         self.mapdistances = np.zeros((self.mapnodes,self.mapnodes))
-        for i in range(self.mapnodes):
-            for j in range(i+1, self.mapnodes):
-                self.mapdistances[i][j] = euclidean(self.mapc[i],self.mapc[j])
-                self.mapdistances[j][i] = self.mapdistances[i][j]
-        # if wrap: # if edges are wrapped, need to make adjustments to the boundary nodes
-
+        if wrap: # if edges are wrapped make copies of lattice and find distances by taking minimum
+            generators = [np.array([i,j]) for i in range(-1,2) for j in range(-1,2)]
+            copies = {i: generators[i]*(self.mapdim) + self.mapc for i in range(len(generators))}
+            for i in range(self.mapnodes):
+                for j in range(i+1, self.mapnodes):
+                    self.mapdistances[i][j] = min(euclidean(self.mapc[i],copy[j]) for copy in copies.values())
+                    self.mapdistances[j][i] = self.mapdistances[i][j]
+        else:
+            for i in range(self.mapnodes):
+                for j in range(i+1, self.mapnodes):
+                    self.mapdistances[i][j] = euclidean(self.mapc[i],self.mapc[j])
+                    self.mapdistances[j][i] = self.mapdistances[i][j]
 
     def train(self, data, neighbourhood, eta, alpha, T):
         """
