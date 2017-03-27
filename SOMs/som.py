@@ -50,21 +50,35 @@ class som:
         self.weights = (-np.ones(self.nnodes*self.featdim)
                                 + 2*np.random.rand(self.nnodes*self.featdim)).reshape((self.nnodes, self.featdim))
 
-    def neighbourhood(self, center, x, t, T, func = "Gaussian"):
+    def neighbourhood(self, t, T, nb, neighborfunc = 'Gaussian'):
         """
-        This method evaluates the neighbourhood function (i.e., radial basis function).
-        A node x that is close to the reference node center will have a greater
-        evaluation and thus will have a bigger weight update.
+        This function evaulates the neighbourhood function whose center node is nb
+        for all nodes in the map. The output is stored in a nnodes x 1 column vector.
         """
-        assert func in ['Gaussian','MexHat']
-        if func == "Gaussian": # a Gaussian with variance = T/(2t)
-            return np.exp(-t/T * self.mapdistances[x][center]**2)
+        if neighborfunc == "Gaussian":
+            return (np.exp(-t/T * self.mapdistances[:,nb]**2))[:,None]
+        elif neighborfunc == "MexHat":
+            return ((np.exp(-t/T * self.mapdistances[:,nb]**2)) - (np.exp(-2*t/T * self.mapdistances[:,nb]**2)))[:,None]
+        else:
+            raise ValueError("Must specify either 'Gaussian' or 'Mexhat' for neighborfunc")
 
-    def train(self, data, neighbourhood, eta, alpha, T):
+
+    def train(self, data, eta, alpha, T, neighborfunc = 'Gaussian'):
         """
-        data = a np.ndarray of observations to train the som
-        neighbourhood = neighbourhood function, default Gaussian.
-        eta = learning rate
-        alpha = learning rate decay
+        This method trains the SOM. Arguments are as follows:
+
+        eta = initial learning rate
+        alpha = learning decay rate
         T = max number of iterations
+        neighborfunc = neighbourhood function, default is Gaussian.
         """
+        assert alpha < 1 and alpha > 0
+        for t in range(1,T):
+            for x in data:
+                # find the winning neuron (i.e., closes to x in weight space)
+                h = [(euclidean(x, self.weights[j]),j) for j in range(self.nnodes)]
+                nb = max(h)[1] # index of closest node
+
+                # update weight vectors
+                eta = alpha*eta**(t/T)
+                self.weights += eta*self.neighbourhood(t,T,nb,neighborfunc)*(self.weights - x)
