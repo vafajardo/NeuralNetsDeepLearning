@@ -16,7 +16,7 @@ def euclidean(x,y):
     return np.sqrt(((x-y)**2).sum())
 
 class som:
-    def __init__(self,featdim,mapdim,wrap=False):
+    def __init__(self,featdim,mapdim,wtsintvl,wrap=False):
         """
         featdim = dimension of the input space (i.e., number of features)
         mapdim = dimension of the map space
@@ -47,8 +47,8 @@ class som:
                     self.mapdistances[i][j] = euclidean(self.mapc[i],self.mapc[j])
                     self.mapdistances[j][i] = self.mapdistances[i][j]
         # initialize weights using UNIF[-1,1]
-        self.weights = (-np.ones(self.nnodes*self.featdim)
-                                + 2*np.random.rand(self.nnodes*self.featdim)).reshape((self.nnodes, self.featdim))
+        self.weights = (np.ones(self.nnodes*self.featdim)*wtsintvl[0]
+                                + (wtsintvl[1] - wtsintvl[0])*np.random.rand(self.nnodes*self.featdim)).reshape((self.nnodes, self.featdim))
 
     def neighbourhood(self, t, T, nb, neighborfunc = 'Gaussian'):
         """
@@ -58,7 +58,7 @@ class som:
         if neighborfunc == "Gaussian":
             return (np.exp(-t/T * self.mapdistances[:,nb]**2))[:,None]
         elif neighborfunc == "MexHat":
-            return ((np.exp(-t/T * self.mapdistances[:,nb]**2)) - (np.exp(-2*t/T * self.mapdistances[:,nb]**2)))[:,None]
+            return (4*(np.exp(-t/T * self.mapdistances[:,nb]**2)) - (np.exp(-2*t/T * self.mapdistances[:,nb]**2)))[:,None]
         else:
             raise ValueError("Must specify either 'Gaussian' or 'Mexhat' for neighborfunc")
 
@@ -81,4 +81,4 @@ class som:
 
                 # update weight vectors
                 eta = alpha*eta**(t/T)
-                self.weights += eta*self.neighbourhood(t,T,nb,neighborfunc)*(self.weights - x)
+                self.weights += eta*self.neighbourhood(t,T,nb,neighborfunc)*(x - self.weights)
