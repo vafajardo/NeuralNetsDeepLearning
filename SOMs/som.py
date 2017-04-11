@@ -82,3 +82,18 @@ class som:
                 # update weight vectors
                 eta = alpha*eta**(t/T)
                 self.weights += eta*self.neighbourhood(t,T,nb,neighborfunc)*(x - self.weights)
+
+    def recall(self, data):
+        """
+        This method takes a matrix of observations and uses the current values
+        of the weights to determine the neuron which is activated for each observation.
+
+        The output gives the coordinates of the winning neuron.
+        """
+        winners = np.zeros((data.shape[0], 2))
+        for i,x in enumerate(data):
+            # find the winning neuron (i.e., closes to x in weight space)
+            h = [(euclidean(x, self.weights[j]),j) for j in range(self.nnodes)]
+            nb = max(h)[1] # index of closest node
+            winners[i,:] = self.mapc[nb]
+        return winners
