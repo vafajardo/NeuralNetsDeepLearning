@@ -82,8 +82,8 @@ class som:
                 nb = max(h)[1] # index of closest node
 
                 # update weight vectors
-                eta = alpha*eta**(t/T)
-                self.weights += eta*self.neighbourhood(t,T,nb,neighborfunc)*(x - self.weights)
+                lr = eta*alpha**(t/T)
+                self.weights += lr*self.neighbourhood(t,T,nb,neighborfunc)*(x - self.weights)
 
     def recall(self, data):
         """
