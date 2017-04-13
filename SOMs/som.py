@@ -8,15 +8,15 @@ Source code for COSC 4P80 assignment 2
 
 __author__ = "Val Andrei Fajardo"
 
-def euclidean(x,y):
+def euclidean(x,y,var=1):
     """
     This function returns the Euclidean distance between two vectors x and y -- which
     are both of np.array().
     """
-    return np.sqrt(((x-y)**2).sum())
+    return np.sqrt(((x/var-y/var)**2).sum())
 
 class som:
-    def __init__(self,featdim,mapdim,wtsintvl,wrap=False):
+    def __init__(self,featdim,mapdim,wtsintvl,wrap=False, var=1):
         """
         featdim = dimension of the input space (i.e., number of features)
         mapdim = dimension of the map space
@@ -25,6 +25,7 @@ class som:
               positive quadrant of the Cartesian space), and ordered lexicographically
         mapdistances = a matrix storing the distances between any two nodes in the map
         weights = weights matrix for each node
+        var = variance of the radial basis functions
         """
         self.featdim = featdim
         self.wrap = wrap
@@ -39,16 +40,17 @@ class som:
             copies = {i: generators[i]*(self.mapdim) + self.mapc for i in range(len(generators))}
             for i in range(self.nnodes):
                 for j in range(i+1, self.nnodes):
-                    self.mapdistances[i][j] = min(euclidean(self.mapc[i],copy[j]) for copy in copies.values())
+                    self.mapdistances[i][j] = min(euclidean(self.mapc[i],copy[j],var) for copy in copies.values())
                     self.mapdistances[j][i] = self.mapdistances[i][j]
         else:
             for i in range(self.nnodes):
                 for j in range(i+1, self.nnodes):
-                    self.mapdistances[i][j] = euclidean(self.mapc[i],self.mapc[j])
+                    self.mapdistances[i][j] = euclidean(self.mapc[i],self.mapc[j],var)
                     self.mapdistances[j][i] = self.mapdistances[i][j]
         # initialize weights using UNIF[-1,1]
         self.weights = (np.ones(self.nnodes*self.featdim)*wtsintvl[0]
                                 + (wtsintvl[1] - wtsintvl[0])*np.random.rand(self.nnodes*self.featdim)).reshape((self.nnodes, self.featdim))
+
 
     def neighbourhood(self, t, T, nb, neighborfunc = 'Gaussian'):
         """
@@ -56,9 +58,9 @@ class som:
         for all nodes in the map. The output is stored in a nnodes x 1 column vector.
         """
         if neighborfunc == "Gaussian":
-            return (np.exp(-t/T * self.mapdistances[:,nb]**2))[:,None]
+            return (np.exp(-t/T / 2 * self.mapdistances[:,nb]**2))[:,None]
         elif neighborfunc == "MexHat":
-            return (4*(np.exp(-t/T * self.mapdistances[:,nb]**2)) - (np.exp(-2*t/T * self.mapdistances[:,nb]**2)))[:,None]
+            return (4*(np.exp(-t/T / 2 * self.mapdistances[:,nb]**2)) - (np.exp(-t/T * self.mapdistances[:,nb]**2)))[:,None]
         else:
             raise ValueError("Must specify either 'Gaussian' or 'Mexhat' for neighborfunc")
 
@@ -88,12 +90,25 @@ class som:
         This method takes a matrix of observations and uses the current values
         of the weights to determine the neuron which is activated for each observation.
 
-        The output gives the coordinates of the winning neuron.
+        The output gives the index of the winning neuron.
         """
-        winners = np.zeros((data.shape[0], 2))
+        winners = []
         for i,x in enumerate(data):
             # find the winning neuron (i.e., closes to x in weight space)
             h = [(euclidean(x, self.weights[j]),j) for j in range(self.nnodes)]
             nb = max(h)[1] # index of closest node
-            winners[i,:] = self.mapc[nb]
+            winners.append(nb)
         return winners
+
+    def classifyneurons(self, data, labels):
+        """
+        This method takes labelled data and passes the features to the SOM.
+        The activated nodes are then classified according to the label which
+        appears the most.
+        """
+        self.activeneurons = {i:[] for i in range(self.nnodes)}
+        for i,x in enumerate(data):
+            # find the winning neuron (i.e., closes to x in weight space)
+            h = [(euclidean(x, self.weights[j]),j) for j in range(self.nnodes)]
+            nb = max(h)[1] # index of closest node
+            self.activeneurons[nb].append(labels[i])
